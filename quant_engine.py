@@ -32,53 +32,45 @@ class QuantEngine:
         print("✅ PyTorch LSTM Neural Network is ready for inference.")
         self.history = []
 
-    def run_optimization(self, tickers, max_weight):
+def run_optimization(self, tickers, max_weight):
         print(f"\n🧠 Executing PyTorch LSTM inference for {tickers}...")
         weights = {}
         
-        # Use a session with a standard browser User-Agent to bypass cloud IP filtering
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        })
+        import os
+        api_key = os.getenv("AV_API_KEY", "84JU4BQPCR8OGKJV") 
         
-        # 2. Authentic Data Processing and Model Inference
         for ticker in tickers:
-            # Scheme 1: Check local cache (1-hour TTL)
+            # Scheme 1: Check local cache
             if ticker in self.cache and (datetime.now() - self.cache[ticker]['time']).seconds < 3600:
                 print(f"⚡ Using cached data for {ticker}")
                 closes = self.cache[ticker]['data']
             else:
                 try:
-                    # Scheme 2: Use lightweight Ticker.history for robust data retrieval
-                    ticker_obj = yf.Ticker(ticker, session=session)
-                    data = ticker_obj.history(period="3mo", interval="1d")
+                    # Scheme 2: Alpha Vantage API replacement for yfinance
+                    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&apikey={api_key}"
+                    response = requests.get(url).json()
                     
-                    if data.empty or len(data) < 30:
-                        raise ValueError("Insufficient data.")
+                    if "Time Series (Daily)" not in response:
+                        raise ValueError("API limit reached or invalid ticker.")
                     
-                    closes = data['Close'].values[-30:]
+                    # Parse Alpha Vantage JSON
+                    df = pd.DataFrame.from_dict(response["Time Series (Daily)"], orient='index')
+                    closes = df['4. close'].astype(float).sort_index().tail(30).values
                     
                     # Update cache
                     self.cache[ticker] = {'data': closes, 'time': datetime.now()}
                     
                 except Exception as e:
-                    # Critical fallback: generate deterministic synthetic data to ensure system stability
-                    print(f"⚠️ Network fetch failed for {ticker} ({e}). Generating synthetic tensor for LSTM...")
+                    print(f"⚠️ Network fetch failed for {ticker} ({e}). Generating synthetic tensor...")
                     np.random.seed(sum(ord(c) for c in ticker)) 
                     closes = np.random.normal(150, 20, 30)
-                
-            # Z-Score standardization
+            
             closes_norm = (closes - np.mean(closes)) / (np.std(closes) + 1e-8)
-            
-            # Reshape to PyTorch Tensor
             x_tensor = torch.tensor(closes_norm, dtype=torch.float32).view(1, -1, 1).to(self.device)
-            
-            # Execute authentic deep learning forward propagation
             with torch.no_grad():
                 prediction = self.model(x_tensor).item()
-                
             weights[ticker] = abs(prediction) + 0.1 
+
 
         # 3. Constraints and Weight Allocation
         total_score = sum(weights.values())
