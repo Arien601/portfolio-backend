@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import numpy as np
 import pandas as pd
-import yfinance as yf
 import requests
 from datetime import datetime
 
@@ -46,7 +45,7 @@ class QuantEngine:
                 closes = self.cache[ticker]['data']
             else:
                 try:
-                    # Scheme 2: Alpha Vantage API replacement for yfinance
+                    # Scheme 2: Alpha Vantage API
                     url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&apikey={api_key}"
                     response = requests.get(url).json()
                     
