@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 import pandas as pd
 import yfinance as yf
+import requests
 from datetime import datetime
 
 # 1. Authentic PyTorch LSTM Model Architecture
@@ -32,11 +33,17 @@ class QuantEngine:
         print(f"\n🧠 Executing PyTorch LSTM inference for {tickers}...")
         weights = {}
         
+        # 伪装成普通浏览器的请求头，绕过雅虎财经的云端IP封锁
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+        })
+        
         # 2. Authentic Data Processing and Model Inference
         for ticker in tickers:
             try:
-                # Fetch real-time market data to serve as model input
-                data = yf.download(ticker, period="3mo", interval="1d", progress=False)
+                # Fetch real-time market data to serve as model input，带上 session 伪装
+                data = yf.download(ticker, period="3mo", interval="1d", progress=False, session=session)
                 if data.empty or len(data) < 30:
                     raise ValueError("Insufficient data from yfinance.")
                 
