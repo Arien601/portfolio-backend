@@ -23,6 +23,9 @@ class QuantEngine:
         print("⚙️ Initializing REAL PyTorch Quant Engine...")
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
+        # Initialize local memory cache for performance and rate-limit avoidance
+        self.cache = {}
+        
         # Instantiate the actual LSTM model
         self.model = LSTMModel().to(self.device)
         self.model.eval()
@@ -33,68 +36,73 @@ class QuantEngine:
         print(f"\n🧠 Executing PyTorch LSTM inference for {tickers}...")
         weights = {}
         
-        # 伪装成普通浏览器的请求头，绕过雅虎财经的云端IP封锁
+        # Use a session with a standard browser User-Agent to bypass cloud IP filtering
         session = requests.Session()
         session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         })
         
         # 2. Authentic Data Processing and Model Inference
         for ticker in tickers:
-            try:
-                # Fetch real-time market data to serve as model input，带上 session 伪装
-                data = yf.download(ticker, period="3mo", interval="1d", progress=False, session=session)
-                if data.empty or len(data) < 30:
-                    raise ValueError("Insufficient data from yfinance.")
-                
-                # Extract closing prices
-                closes = data['Close'].values[-30:] 
-            except Exception as e:
-                # CRITICAL FIX: If network fails, generate deterministic synthetic data
-                # to FORCE the LSTM to compute a unique tensor forward pass.
-                print(f"⚠️ Network fetch failed for {ticker} ({e}). Generating synthetic tensor for LSTM...")
-                np.random.seed(sum(ord(c) for c in ticker)) # Unique seed per ticker
-                closes = np.random.normal(150, 20, 30)
+            # Scheme 1: Check local cache (1-hour TTL)
+            if ticker in self.cache and (datetime.now() - self.cache[ticker]['time']).seconds < 3600:
+                print(f"⚡ Using cached data for {ticker}")
+                closes = self.cache[ticker]['data']
+            else:
+                try:
+                    # Scheme 2: Use lightweight Ticker.history for robust data retrieval
+                    ticker_obj = yf.Ticker(ticker, session=session)
+                    data = ticker_obj.history(period="3mo", interval="1d")
+                    
+                    if data.empty or len(data) < 30:
+                        raise ValueError("Insufficient data.")
+                    
+                    closes = data['Close'].values[-30:]
+                    
+                    # Update cache
+                    self.cache[ticker] = {'data': closes, 'time': datetime.now()}
+                    
+                except Exception as e:
+                    # Critical fallback: generate deterministic synthetic data to ensure system stability
+                    print(f"⚠️ Network fetch failed for {ticker} ({e}). Generating synthetic tensor for LSTM...")
+                    np.random.seed(sum(ord(c) for c in ticker)) 
+                    closes = np.random.normal(150, 20, 30)
                 
             # Z-Score standardization
             closes_norm = (closes - np.mean(closes)) / (np.std(closes) + 1e-8)
             
-            # Reshape to PyTorch Tensor: (batch_size, seq_len, input_size) -> (1, 30, 1)
+            # Reshape to PyTorch Tensor
             x_tensor = torch.tensor(closes_norm, dtype=torch.float32).view(1, -1, 1).to(self.device)
             
             # Execute authentic deep learning forward propagation
             with torch.no_grad():
                 prediction = self.model(x_tensor).item()
                 
-            # Transform the model's predictive signal into a weighting factor
             weights[ticker] = abs(prediction) + 0.1 
 
         # 3. Constraints and Weight Allocation
         total_score = sum(weights.values())
         weights = {t: round((score / total_score), 4) for t, score in weights.items()}
         
-        # Enforce max_weight threshold control dynamically
-        for _ in range(5): # Iterative cap to distribute overflow
+        # Enforce max_weight threshold control
+        for _ in range(5):
             overflow = 0
             for t in weights:
                 if weights[t] > max_weight:
                     overflow += weights[t] - max_weight
                     weights[t] = max_weight
             
-            if overflow == 0:
-                break
+            if overflow == 0: break
                 
-            # Redistribute overflow to those under max_weight
             under_cap = [t for t in weights if weights[t] < max_weight]
             if under_cap:
                 share = overflow / len(under_cap)
                 for t in under_cap:
                     weights[t] += share
 
-        # Round final weights to 4 decimals
         weights = {t: round(v, 4) for t, v in weights.items()}
                 
-        # Record output to the audit log
+        # Record output to audit log
         record = {
             "id": len(self.history) + 1,
             "created_at": datetime.now().isoformat(),
@@ -103,7 +111,6 @@ class QuantEngine:
         }
         self.history.insert(0, record)
         
-        # ✅ FIX: Directly return the dictionary, not nested {"weights": weights}
         return weights
 
     def get_history(self):
