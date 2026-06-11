@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 import pandas as pd
 import requests
+import os
 from datetime import datetime
 
 # 1. Authentic PyTorch LSTM Model Architecture
@@ -35,34 +36,19 @@ class QuantEngine:
         print(f"\n🧠 Executing PyTorch LSTM inference for {tickers}...")
         weights = {}
         
-        import os
-        api_key = os.getenv("AV_API_KEY", "84JU4BQPCR8OGKJV") 
-        
         for ticker in tickers:
-            # Scheme 1: Check local cache
-            if ticker in self.cache and (datetime.now() - self.cache[ticker]['time']).seconds < 3600:
-                print(f"⚡ Using cached data for {ticker}")
-                closes = self.cache[ticker]['data']
-            else:
-                try:
-                    # Scheme 2: Alpha Vantage API
-                    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&apikey={api_key}"
-                    response = requests.get(url).json()
-                    
-                    if "Time Series (Daily)" not in response:
-                        raise ValueError("API limit reached or invalid ticker.")
-                    
-                    # Parse Alpha Vantage JSON
-                    df = pd.DataFrame.from_dict(response["Time Series (Daily)"], orient='index')
-                    closes = df['4. close'].astype(float).sort_index().tail(30).values
-                    
-                    # Update cache
-                    self.cache[ticker] = {'data': closes, 'time': datetime.now()}
-                    
-                except Exception as e:
-                    print(f"⚠️ Network fetch failed for {ticker} ({e}). Generating synthetic tensor...")
-                    np.random.seed(sum(ord(c) for c in ticker)) 
-                    closes = np.random.normal(150, 20, 30)
+            # Scheme 1: Try reading from local CSV first (Offline Mode)
+            try:
+                file_path = os.path.join("data", f"{ticker}.csv")
+                df = pd.read_csv(file_path)
+                closes = df['Close'].astype(float).values[-30:]
+                print(f"📂 Successfully loaded {ticker} from local storage.")
+            
+            # Scheme 2: Fallback to synthetic if local file is missing
+            except Exception as e:
+                print(f"⚠️ Local load failed for {ticker}: {e}. Generating synthetic tensor...")
+                np.random.seed(sum(ord(c) for c in ticker)) 
+                closes = np.random.normal(150, 20, 30)
             
             # Z-Score standardization
             closes_norm = (closes - np.mean(closes)) / (np.std(closes) + 1e-8)
