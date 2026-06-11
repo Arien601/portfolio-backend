@@ -35,18 +35,35 @@ class QuantEngine:
     def run_optimization(self, tickers, max_weight):
         print(f"\n🧠 Executing PyTorch LSTM inference for {tickers}...")
         weights = {}
+        api_key = os.getenv("AV_API_KEY", "84JU4BQPCR8OGKJV") 
         
         for ticker in tickers:
-            # Scheme 1: Try reading from local CSV first (Offline Mode)
-            try:
-                file_path = os.path.join("data", f"{ticker}.csv")
-                df = pd.read_csv(file_path)
-                closes = df['Close'].astype(float).values[-30:]
-                print(f"📂 Successfully loaded {ticker} from local storage.")
+            closes = None
             
-            # Scheme 2: Fallback to synthetic if local file is missing
+            # Scheme 1: Try Online API first
+            try:
+                url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&apikey={api_key}"
+                response = requests.get(url, timeout=5).json()
+                if "Time Series (Daily)" in response:
+                    df = pd.DataFrame.from_dict(response["Time Series (Daily)"], orient='index')
+                    closes = df['4. close'].astype(float).sort_index().tail(30).values
+                    print(f"🌐 Successfully fetched {ticker} from API.")
             except Exception as e:
-                print(f"⚠️ Local load failed for {ticker}: {e}. Generating synthetic tensor...")
+                print(f"⚠️ API fetch failed for {ticker}: {e}")
+
+            # Scheme 2: Fallback to local CSV
+            if closes is None:
+                try:
+                    file_path = os.path.join("data", f"{ticker}.csv")
+                    df = pd.read_csv(file_path)
+                    closes = df['Close'].astype(float).values[-30:]
+                    print(f"📂 Successfully loaded {ticker} from local storage.")
+                except Exception as e:
+                    print(f"⚠️ Local load failed for {ticker}: {e}")
+
+            # Scheme 3: Synthetic fallback
+            if closes is None:
+                print(f"⚠️ All sources failed for {ticker}. Generating synthetic tensor...")
                 np.random.seed(sum(ord(c) for c in ticker)) 
                 closes = np.random.normal(150, 20, 30)
             
