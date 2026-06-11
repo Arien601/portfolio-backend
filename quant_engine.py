@@ -104,6 +104,6 @@ def run_optimization(self, tickers, max_weight):
         self.history.insert(0, record)
         
         return weights
-
+    
     def get_history(self):
         return self.history
