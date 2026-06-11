@@ -56,10 +56,14 @@ class QuantEngine:
                 try:
                     file_path = os.path.join("data", f"{ticker}.csv")
                     df = pd.read_csv(file_path)
-                    closes = df['Close'].astype(float).values[-30:]
+                    # Automatically clean whitespace from column names
+                    df.columns = df.columns.str.strip()
+                    # Use 'Price' as confirmed by your file structure
+                    closes = df['Price'].astype(float).values[-30:]
                     print(f"📂 Successfully loaded {ticker} from local storage.")
                 except Exception as e:
                     print(f"⚠️ Local load failed for {ticker}: {e}")
+                    print(f"DEBUG: Available columns were: {df.columns.tolist() if 'df' in locals() else 'None'}")
 
             # Scheme 3: Synthetic fallback
             if closes is None:
