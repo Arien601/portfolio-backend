@@ -32,7 +32,7 @@ class QuantEngine:
         print("✅ PyTorch LSTM Neural Network is ready for inference.")
         self.history = []
 
-def run_optimization(self, tickers, max_weight):
+    def run_optimization(self, tickers, max_weight):
         print(f"\n🧠 Executing PyTorch LSTM inference for {tickers}...")
         weights = {}
         
@@ -65,12 +65,12 @@ def run_optimization(self, tickers, max_weight):
                     np.random.seed(sum(ord(c) for c in ticker)) 
                     closes = np.random.normal(150, 20, 30)
             
+            # Z-Score standardization
             closes_norm = (closes - np.mean(closes)) / (np.std(closes) + 1e-8)
             x_tensor = torch.tensor(closes_norm, dtype=torch.float32).view(1, -1, 1).to(self.device)
             with torch.no_grad():
                 prediction = self.model(x_tensor).item()
             weights[ticker] = abs(prediction) + 0.1 
-
 
         # 3. Constraints and Weight Allocation
         total_score = sum(weights.values())
@@ -104,6 +104,6 @@ def run_optimization(self, tickers, max_weight):
         self.history.insert(0, record)
         
         return weights
-    
+
     def get_history(self):
         return self.history
